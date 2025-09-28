@@ -1,0 +1,66 @@
+# 1. Distributed web infrastructure
+
+## Overview
+Design a 3-server web infrastructure for `www.foobar.com`:
+-**1 Load Balancer (HAPProxy)**
+-**2 App servers** (each runs: Nginx (web), APp server, App code, MySQL)
+
+Goal:improve availibility and traffic handling vs. a single server.
+
+---
+## why each added element
+-**HAPProxy (Load Balancer):** Distributes traffic across multpile app servers -> improves availability and capacity.
+-**Second app server:** Redundancy (if one fails, the site stays up) adn horizontal scale(handle more request).
+-**DB replication (Primary -> Replica):** Data redundancy and safer reads; enables offloading read traffic.
+
+---
+
+## Load Balancer config
+-**Algorithm:** *Round-Robin* (example).
+-Works by sending each new request to the next healthy backend in order -> simple, fair distribution  under similar node capacity.
+-**Setup mode:** *Active-Active* across the **two app servers**.
+-**Active-Active:** both backends receive traffic simultnaeously (higher throughput).
+-**Active-Passive:** one backend serves traffic, the other is standby only (simpler failover, less capacity).
+
+>Optional production notes: enable **health checks**, **stucky sessions** (via cookie) if session state isn/t externalized.
+
+
+---
+
+## Databse cluster (Primay-Replica)
+-**How it work:**
+-**Primary (master):** hanldes **writes** ( UNSERT/UPDATE/DELETE) and can serve reads.
+-**Replica (Slave):** receives data changes from Primary via replication log (asynchronous by default), typically serves **read-only** queries
+-**From the application's perpective:**
+-**Primary node:** Write endpoint; may also handle critical reads.
+-**Replica node(s):** read endpoints; reduce load on Primary and improve perfomance for read-heavy workloads.
+
+---
+## Request flow
+1. User requests `ww.foobar.com` -> DNS resolves to HAProxy publix IP.
+2. **HAProxy** ont the chosen server static content or forwards to the **App server**.
+3.**Nginx** on the chosen server serves static content or forwards to the **App server**.
+4. **App server** runs business logic; **writes** go to **DB Primary**, **reads** can go to**Replica**.
+5.Response propagates back -> Nginx -> HAProxy -> User.
+
+---
+
+## diagram
+
+```mermaid
+graph TD
+U((USer Browser))
+DNS[DNS - www.foobar.com]
+LB[HAProxy Load Balancer\n(Health checks, Round-Robin)]
+S1[Nginx + App Server + App Files\nMySQl Primary]
+S2[Nginx + App Tier (Active-Active)
+
+S1
+S2
+end
+U --> DNS --> LB
+LB --> S1
+LB --> S2
+S1 -->|Writes/reads| S1
+S1 -->|Replicates->| S2
+S2 -->|Reads only| S2
