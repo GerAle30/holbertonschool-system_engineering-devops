@@ -1,0 +1,92 @@
+## Overview
+Design a **3-server** architecture for `www.foobar.com` that is **secured**, serves ** encrypted traffic (HTPPS)**, and is **monitorede**.
+
+-**1 Load Balancer:** HAProxy (+ SSL certificate)
+-**2 App servers:** each runs Nginx (web), App server, App code, MySQL
+-**3 MOnitoring clients** (e.g., Sumo Logic/Datadog/Prometheus agent)
+
+---
+
+## Why each added element
+-**SSL certificate on LB:** Enables **HTTPS** -> confidentiality, integrity, server authentication, HSTS, better SEO.
+- **Firewalls (3X):**
+1) **Edge firewall/SG in front of the LB:** Allow only 80/443 in (optionally 80-301 to 443), drop everything else.
+2)**LB->App tier firewall/SG:** Allow only 80/443 from LB to the app servers.
+3) **Host firewalls on app servers:** Restict MySQL to localhost (127.0.0.1) and SSH from ops IPs only.
+-**Monitoring clients (3X):** One agent per node (LB, App1, App2) to ship logs/metrics/traces -> visibility, alerting, SLOs.
+
+---
+
+##Request flow (secured)
+1. User requests `https://www.foobar.com` -> DNS -> LB public IP.
+2.**TLS termination** at HAProxy (present the SSL cert).
+3.LB forwards to a healthy backend (Nginx on App1 or App2).
+4.Nginx serves static or proxies to the **aplication server**.
+5. App queries local **MySQL** (Writes on Primary, reads may be served locally or form a Replica if configured).
+6. Response -> Nginx -> LB -> User (over HTTPS).
+
+---
+
+## Load balancer
+**Algorithm (example):** *Round-Robin* (simple, even distribution under comparable capacity).
+-**Mode:** *Active-Active* Across both app servers (both receive traffic).
+-**Health checks:** Periodic HTTP checks; LB removes unhealthy nodes automatically.
+-**Sticky sessions (optional);** If sessions aren/t externalized (e.g., Redis), enable cookie stickiness.
+
+---
+
+# Monitoring
+-**What it's udsed for:** Availability, perofmance (latency, **QPS**), capacoity, errors; PProactive alerting and debugging.
+- **How data is collected:**
+-**agents** (LB + App1 + app2) tail logs (HAProxy, Nginx, app, MySQL) and scrape/export metrics (CPU ,RAM, disk, net, TCP, 4xx/5xx).
+-Ship to a backend (Sumo/Datadog/Prometheus -> Alertmanager, etc.).
+-**Monitoring web server QPS:**
+-Enable Nginx `Stub_Status` or parse acces logs; agents compute `requests / time_window`.
+-Alternatively, read ** HAProxy stats** QPS per backend.
+-Create a dashboard + alert:e.g., "QPS > baseline + 3o for 5m" or Sudden drop to 0".
+
+---
+
+##Security rationale
+-**Firewalls:** Principle of least privilege for each hop.
+-**HTTPS:** Protects credentials/PII, prevents MITM/tampering, enables HSTS.
+-**Host hardening:** Close all non-meeded ports; SSH restricted; MySQL bound to localhost; frequent package updates.
+
+---
+
+## Database (Primary-Replica note)
+-Typical pattern is **Primary (writes)** + **Replica(s) (reads)** with async replication.
+-**Primary node:** write endpoint for the app; can server critical reads.
+-**Replica node:** read-only, offloads read traffic and improves performance.
+-promote Replica on primary failure (with a controlled failover process).
+
+---
+
+##Diagram
+
+```mermaid
+graph TD
+U((User))
+DNS[DNS: www.foobar.com]
+FW1[Firewall #1 (Edge/SG)\nAllow 80/443 -> LB only]
+LB[HAProxy + SSL cert\n(HTTPS term, health checks, RR)]
+FW2[Firewall #2 (LB->App Tier)\nAllow 80/443 from LB]
+A1[Nginx +App + MySQL\n(APP Server 1)]
+A2[Nginx + App + MySQL\n(App Server 2)]
+FW3[Firewall #3 (Host/DB rules)\nMySQL localhost only, SSH restricted]
+MON[(Monitonring Backend)]
+AgentLB[[Agent]]
+AgentA1[[Agent]]
+AgentA2[[Agent]]
+
+U -->|HTTPS| DNS --> FW1 --> LB --> FW2
+FW2 --> a1
+FW2 --> A2
+A1 --> Fw3
+A2 --> FW3
+
+AgentLB --- MON
+AgentA1 --- MON
+AgentA@ --- MON
+
+Style MON fill:#eef,stroke:#88a
