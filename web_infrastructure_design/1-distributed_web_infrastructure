@@ -1,0 +1,61 @@
+# 0. Simple web stack
+
+## Overview
+- Domain: `www.foobar.com` -> points to `8.8.8.8` (**A record**)
+-One server (`8.8.8.8`) running:
+    -**Nginx** (web server)
+    -**Appplication server**
+    -**Application files (code)**
+    -**MySQL**(database)
+-Communication: **HTTP/HTTPS**
+
+---
+
+## Request Flow
+1. User enters `www.foobar.com`
+2. **DNS** resolves to `8.8.8.8`
+3. Request -> **Nginx**
+    -Static -> served directly
+    -Dynamic -> forwarded to app server
+4. **App server** executes code, queries **MySQL** if needed
+5. REsponse -> Nginx -> User's browser
+
+---
+
+## Components
+-**Server:** Machine hosting the site
+-**Domain/DNS:** COnverts name to IP (**A record**)
+-**App server:** Runs app logic
+-**Database (MySQL):** Sotres data
+
+---
+
+## Issues
+-**SPOF:** One server failure = full outage 
+-**Maintenance downtime:** Restarting services stops the site
+**No scalability:** Cannot handle high traffic
+
+---
+## Diagram
+
+```Mermaid
+graph TD
+    User((User))
+    DNS[DNS www.foobar.com -> 8.8.8.8.]
+    Server[Server 8.8.8.8.]
+    Nginx[Nginx Web Server]
+    App[Application Server]
+    DB[(MySQL Databaase)]
+    Code[APp FIles]
+
+    USer --> DNS
+    DNS --> Server
+    Server --> Nginx
+    Nginx -->|Static| USer
+    Nginx -->|Dynamic| App
+    App --> Code
+    App --> DB
+    DB -->> App
+    App --> Nginx
+    Nginx --> User
+
