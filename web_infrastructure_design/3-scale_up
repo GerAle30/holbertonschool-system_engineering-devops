@@ -1,0 +1,35 @@
+**Goal:** Remove single points of failure and isolate concerns byu adding redundancy at the load balancer and splitting the stack dedicated tiers.
+
+We evolve the previous setup by forming a ** loa balancer cluster** and giving ** each componet its own server**. We ad a ** second HAProxy** and bind both with a **virtual IP (VIP)** using VRRP/ keepalived (or similar). This eliminates the LB as a SPOF: one node is **active**, the other **passive**; on failure, the VIp Floats to the standby and traffic continues. We then ** separate concerns**: one server runs **only the web server (Nginx)**, another runs **only the application server**, and a third runs **only the databae (MySQL**. This separation improves **scalability** (scale each tier independetly), **perfomance isolation** (CPU/RAM/IO of one tier cna't starve the others), **security** (tighter firewall rulkes per tier), and **operability** (deploy/rollback each tierwithout impacting the rest).
+
+## Architecture (what's added & why)
+-**+1 Load Balancer (HAProxy)** -> clustered with the original via VIP
+*why:* reemoves LB SPOF; semaless failover, higher availability.
+-**+1 Server (deciated to a split tier)** -> We repurpose existing hosts so that we end with:
+-**Web server tier (Niginx)** on its own machine
+-**Application server tier** on its own machine
+-**Database tier (MySQL)** on its own machine
+*WHY:* isolate responsibilities, scale per tier, simplify troubleshootingand capacity planning.
+
+## Web server vs Apllication server (concise)
+-**Web server (Nginx):** Terminates HTTP(S), serves **static** assets, and **reverse-proxies** dynamic request to the app tier. opotimized for connections, caching, gzip, TLS, headers.
+-**Applicaiton server:** EXecutes **business logic** (e.g., Python/WSGI, Node, PHP-FPM, Java).
+
+
+## Request flow (brief)
+`User -> DNS -> VIP HAProxy(Active) -> Nginx(Web) -> App SErver -> MySQL -> HAProxy -> User`
+If the active HAProxy fails, the **VIP moves** to the passive node automatically, keeping the site up.
+
+## Diagram
+```mermaid
+graph TD
+
+U((User)) --> DNS[DNS: www.foobar.com]
+DNS --> VIP[virtual IP (VRRP)]
+VIP --> LB1[HAProxy #1 (active)]
+VIP --> LB2[HAProxy #2 (passive)]
+LB1 --> W[Web Server (Nginx)]
+LB2 -. standby .-> W
+W --> A[Applicaiton Server]
+A --> D[(MySQL Database)]
+
